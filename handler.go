@@ -33,9 +33,16 @@ type requestData struct {
 // reflectHandler processes all requests and returns output in the requested format
 func reflectHandler(w http.ResponseWriter, r *http.Request) {
 
+	var port string
+
+	// sometimes the r.RemoteAddr has ip:port and sometime just ip
+	if strings.Contains(r.RemoteAddr, ":") {
+		port = strings.Split(r.RemoteAddr, ":")[1]
+	}
+
 	rd := &requestData{
 		IP:            strings.Split(r.RemoteAddr, ":")[0],
-		Port:          strings.Split(r.RemoteAddr, ":")[1],
+		Port:          port,
 		Method:        r.Method,
 		Protocol:      r.Proto,
 		Host:          r.Host,
