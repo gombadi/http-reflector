@@ -72,6 +72,7 @@ func reflectHandler(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/xml")
 		default:
 			ob = writeText(rd)
+			w.Header().Set("Content-Type", "text/plain")
 		}
 	default:
 		ob = []byte("Nothing to see here. Move along please\n")
