@@ -18,7 +18,7 @@ If you ask for /all then you can also add ?o=json or ?o=xml to see the output in
 
 Simply use go get to download the code:
 
-    $ go get github.com/gombadi/go-reflector
+    $ go get github.com/gombadi/http-reflector
 
 
 Then run it using ./reflector -p <8880>
