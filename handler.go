@@ -13,6 +13,7 @@ import (
 )
 
 type requestData struct {
+	contentType   string
 	IP            string
 	Port          string
 	Method        string
@@ -33,15 +34,10 @@ type requestData struct {
 // reflectHandler processes all requests and returns output in the requested format
 func reflectHandler(w http.ResponseWriter, r *http.Request) {
 
-	var port string
-
-	// sometimes the r.RemoteAddr has ip:port and sometime just ip
-	if strings.Contains(r.RemoteAddr, ":") {
-		port = strings.Split(r.RemoteAddr, ":")[1]
-	}
+	ipaddr, port := ExtractIP(r.RemoteAddr)
 
 	rd := &requestData{
-		IP:            strings.Split(r.RemoteAddr, ":")[0],
+		IP:            ipaddr,
 		Port:          port,
 		Method:        r.Method,
 		Protocol:      r.Proto,
@@ -59,21 +55,11 @@ func reflectHandler(w http.ResponseWriter, r *http.Request) {
 
 	var ob []byte
 
-	switch rd.URLPath[1:] {
-	case "ip":
+	switch {
+	case strings.HasPrefix(rd.URLPath[1:], "ip"):
 		ob = []byte(rd.IP + "\n")
-	case "all":
-		switch selectOutput(rd) {
-		case "json":
-			ob = writeJson(rd)
-			w.Header().Set("Content-Type", "application/json")
-		case "xml":
-			ob = writeXML(rd)
-			w.Header().Set("Content-Type", "application/xml")
-		default:
-			ob = writeText(rd)
-			w.Header().Set("Content-Type", "text/plain")
-		}
+	case strings.HasPrefix(rd.URLPath[1:], "all"):
+		ob = writeAll(rd)
 	default:
 		ob = []byte("Nothing to see here. Move along please\n")
 	}
@@ -82,6 +68,11 @@ func reflectHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("reflector: nil output buffer - sending internal server error\n")
 		w.WriteHeader(500)
 	} else {
+		if len(rd.contentType) != 0 {
+			w.Header().Set("Content-Type", rd.contentType)
+		} else {
+			w.Header().Set("Content-Type", "text/plain")
+		}
 		io.WriteString(w, string(ob))
 	}
 
@@ -89,6 +80,28 @@ func reflectHandler(w http.ResponseWriter, r *http.Request) {
 		rd.IP,
 		rd.Method,
 		rd.RequestURI)
+}
+
+// ExtractIP extracts the ip & port from the http.Request.RemoteAddr field.
+// This field is in different formats depending on ipv4/ipv6 and if the
+// port info is available
+func ExtractIP(remote string) (ipaddr, port string) {
+
+	// ipv4 address format
+	switch strings.Count(remote, ":") {
+	case 0:
+		return remote, ""
+	case 1:
+		return strings.Split(remote, ":")[0], strings.Split(remote, ":")[1]
+	}
+	// ipv6 address format
+	switch strings.Count(remote, "]") {
+	case 0:
+		return remote, ""
+	case 1:
+		return strings.Split(remote, "]")[0][1:], strings.Split(remote, "]")[1][1:]
+	}
+	return "", ""
 }
 
 // selectOutput will return the requested output format
@@ -104,56 +117,66 @@ func selectOutput(rd *requestData) string {
 		return "html"
 	}
 
+	switch {
+	case strings.Contains(rd.URLPath, "/json"):
+		return "json"
+	case strings.Contains(rd.URLPath, "/xml"):
+		return "xml"
+	case strings.Contains(rd.URLPath, "/html"):
+		return "html"
+	}
+
 	return "text"
 }
 
-// writeXML sends output in XML format
-// xxxxFIXxxxx having some issues with maps being an unsupported type
-func writeXML(rd *requestData) []byte {
+// writeAll will return all requesrt information in the requested format
+func writeAll(rd *requestData) []byte {
 
-	b, err := xml.MarshalIndent(rd, "", "\t")
-	if err != nil {
-		log.Printf("error with xml.Marshal: %v\n", err)
+	switch selectOutput(rd) {
+	case "json":
+
+		b, err := json.MarshalIndent(rd, "", "\t")
+		if err != nil {
+			log.Printf("error with json.Marshal: %e", err)
+		}
+		rd.contentType = "application/json"
+		return b
+
+	case "xml":
+		b, err := xml.MarshalIndent(rd, "", "\t")
+		if err != nil {
+			log.Printf("error with xml.Marshal: %e", err)
+		}
+		rd.contentType = "application/xml"
+		return b
+
+	default:
+
+		var b bytes.Buffer
+
+		b.WriteString("Request:\n")
+		b.WriteString("request.Time: " + rd.Time.String() + "\n")
+		b.WriteString("request.IP: " + rd.IP + "\n")
+		b.WriteString("request.Port: " + rd.Port + "\n")
+		b.WriteString("request.Method: " + rd.Method + "\n")
+		b.WriteString("request.Proto: " + rd.Protocol + "\n")
+		b.WriteString("request.Host: " + rd.Host + "\n")
+		b.WriteString("request.RequestURI.length: " + strconv.Itoa(rd.RequestURIlen) + "\n")
+		b.WriteString("request.RequestURI: " + rd.RequestURI + "\n")
+		b.WriteString("\nURL:\n")
+		b.WriteString("url.Path.length: " + strconv.Itoa(rd.URLPathlen) + "\n")
+		b.WriteString("url.Path: " + rd.URLPath + "\n")
+		b.WriteString("url.RawQuery.length: " + strconv.Itoa(rd.URLQuerylen) + "\n")
+		b.WriteString("url.RawQuery: " + rd.URLQuery + "\n")
+		b.WriteString("url.Fragment: " + rd.URLFragment + "\n")
+
+		b.WriteString("\nHeaders:\n")
+		for k, v := range rd.Header {
+			b.WriteString("header." + k + ": " + v[0] + "\n")
+		}
+
+		return b.Bytes()
 	}
-	return b
-}
-
-// writeJson sends output in json format
-func writeJson(rd *requestData) []byte {
-
-	b, err := json.MarshalIndent(rd, "", "\t")
-	if err != nil {
-		log.Printf("error with json.Marshal: %e", err)
-	}
-	return b
-}
-
-// writeText sends output in text format
-func writeText(rd *requestData) []byte {
-	var b bytes.Buffer
-
-	b.WriteString("Request:\n")
-	b.WriteString("request.Time: " + rd.Time.String() + "\n")
-	b.WriteString("request.IP: " + rd.IP + "\n")
-	b.WriteString("request.Port: " + rd.Port + "\n")
-	b.WriteString("request.Method: " + rd.Method + "\n")
-	b.WriteString("request.Proto: " + rd.Protocol + "\n")
-	b.WriteString("request.Host: " + rd.Host + "\n")
-	b.WriteString("request.RequestURI.length: " + strconv.Itoa(rd.RequestURIlen) + "\n")
-	b.WriteString("request.RequestURI: " + rd.RequestURI + "\n")
-	b.WriteString("\nURL:\n")
-	b.WriteString("url.Path.length: " + strconv.Itoa(rd.URLPathlen) + "\n")
-	b.WriteString("url.Path: " + rd.URLPath + "\n")
-	b.WriteString("url.RawQuery.length: " + strconv.Itoa(rd.URLQuerylen) + "\n")
-	b.WriteString("url.RawQuery: " + rd.URLQuery + "\n")
-	b.WriteString("url.Fragment: " + rd.URLFragment + "\n")
-
-	b.WriteString("\nHeaders:\n")
-	for k, v := range rd.Header {
-		b.WriteString("header." + k + ": " + v[0] + "\n")
-	}
-
-	return b.Bytes()
 }
 
 /*
