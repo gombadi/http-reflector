@@ -34,7 +34,7 @@ type requestData struct {
 // reflectHandler processes all requests and returns output in the requested format
 func reflectHandler(w http.ResponseWriter, r *http.Request) {
 
-	ipaddr, port := ExtractIP(r.RemoteAddr)
+	ipaddr, port := ExtractIP(r)
 
 	rd := &requestData{
 		IP:            ipaddr,
@@ -82,24 +82,31 @@ func reflectHandler(w http.ResponseWriter, r *http.Request) {
 		rd.RequestURI)
 }
 
-// ExtractIP extracts the ip & port from the http.Request.RemoteAddr field.
-// This field is in different formats depending on ipv4/ipv6 and if the
-// port info is available
-func ExtractIP(remote string) (ipaddr, port string) {
+// ExtractIP extracts the ip & port from the http.Request field.
+// This field is in different formats depending on ipv4/ipv6, if the request was
+// forwarded and if port info is available
+func ExtractIP(r *http.Request) (ipaddr, port string) {
+
+	// First check if there is a header X-Forwarded-For or similar
+	for k, v := range r.Header {
+		if ok := strings.Contains(strings.ToLower(k), "x-forwarded-for"); ok == true {
+			return v[0], ""
+		}
+	}
 
 	// ipv4 address format
-	switch strings.Count(remote, ":") {
+	switch strings.Count(r.RemoteAddr, ":") {
 	case 0:
-		return remote, ""
+		return r.RemoteAddr, ""
 	case 1:
-		return strings.Split(remote, ":")[0], strings.Split(remote, ":")[1]
+		return strings.Split(r.RemoteAddr, ":")[0], strings.Split(r.RemoteAddr, ":")[1]
 	}
 	// ipv6 address format
-	switch strings.Count(remote, "]") {
+	switch strings.Count(r.RemoteAddr, "]") {
 	case 0:
-		return remote, ""
+		return r.RemoteAddr, ""
 	case 1:
-		return strings.Split(remote, "]")[0][1:], strings.Split(remote, "]")[1][1:]
+		return strings.Split(r.RemoteAddr, "]")[0][1:], strings.Split(r.RemoteAddr, "]")[1][1:]
 	}
 	return "", ""
 }
