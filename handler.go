@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -94,21 +95,11 @@ func ExtractIP(r *http.Request) (ipaddr, port string) {
 		}
 	}
 
-	// ipv4 address format
-	switch strings.Count(r.RemoteAddr, ":") {
-	case 0:
-		return r.RemoteAddr, ""
-	case 1:
-		return strings.Split(r.RemoteAddr, ":")[0], strings.Split(r.RemoteAddr, ":")[1]
+	ipaddr, port, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return "", ""
 	}
-	// ipv6 address format
-	switch strings.Count(r.RemoteAddr, "]") {
-	case 0:
-		return r.RemoteAddr, ""
-	case 1:
-		return strings.Split(r.RemoteAddr, "]")[0][1:], strings.Split(r.RemoteAddr, "]")[1][1:]
-	}
-	return "", ""
+	return ipaddr, port
 }
 
 // selectOutput will return the requested output format
