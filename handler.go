@@ -28,14 +28,13 @@ type requestData struct {
 	URLQuerylen   int
 	URLFragment   string
 	Header        map[string][]string `xml:"-"`
-	//Header map[string][]string
-	Time time.Time
+	Time          time.Time
 }
 
 // reflectHandler processes all requests and returns output in the requested format
 func reflectHandler(w http.ResponseWriter, r *http.Request) {
 
-	ipaddr, port := ExtractIP(r)
+	ipaddr, port := extractIP(r)
 
 	rd := &requestData{
 		IP:            ipaddr,
@@ -57,12 +56,10 @@ func reflectHandler(w http.ResponseWriter, r *http.Request) {
 	var ob []byte
 
 	switch {
-	case strings.HasPrefix(rd.URLPath[1:], "ip"):
-		ob = []byte(rd.IP + "\n")
 	case strings.HasPrefix(rd.URLPath[1:], "all"):
 		ob = writeAll(rd)
 	default:
-		ob = []byte("Nothing to see here. Move along please\n")
+		ob = []byte(rd.IP + "\n")
 	}
 
 	if ob == nil {
@@ -83,15 +80,16 @@ func reflectHandler(w http.ResponseWriter, r *http.Request) {
 		rd.RequestURI)
 }
 
-// ExtractIP extracts the ip & port from the http.Request field.
-// This field is in different formats depending on ipv4/ipv6, if the request was
-// forwarded and if port info is available
-func ExtractIP(r *http.Request) (ipaddr, port string) {
+// extractIP extracts the ip & port from the http.Request.RemoteAddr field.
+// This field is in different formats depending on ipv4/ipv6 and if the
+// port info is available
+func extractIP(r *http.Request) (ipaddr, port string) {
 
 	// First check if there is a header X-Forwarded-For or similar
 	for k, v := range r.Header {
 		if ok := strings.Contains(strings.ToLower(k), "x-forwarded-for"); ok == true {
-			return v[0], ""
+			// only return the first or only ip address
+			return strings.Split(v[0], ",")[0], ""
 		}
 	}
 
@@ -179,4 +177,4 @@ func writeAll(rd *requestData) []byte {
 
 /*
 
-*/
+ */
